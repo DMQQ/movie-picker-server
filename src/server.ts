@@ -1,7 +1,10 @@
 import express from "express";
 import { createServer } from "node:http";
 import { Server, Socket } from "socket.io";
-import { Room, Rooms, defaultMovies } from "./utils/Room";
+import { Room, Rooms } from "./utils/Room";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
 const server = createServer(app);
@@ -9,6 +12,29 @@ const io = new Server(server);
 
 const users = new Map<string, Socket>();
 const rooms = new Rooms();
+
+const url = (props: { page: number }) =>
+  `https://api.themoviedb.org/3/discover/movie?include_adult=true&include_video=false&language=en-US&page=${props.page}&sort_by=popularity.desc`;
+const options = {
+  method: "GET",
+  headers: {
+    accept: "application/json",
+    Authorization: `Bearer ${process.env.TMDB_API_KEY}`,
+  },
+};
+
+const fetchMovies = async (page = 1) => {
+  if (!process.env.TMDB_API_KEY) throw new Error("TMDB_API_KEY not found");
+  try {
+    const response = await fetch(url({ page }), options);
+
+    if (!response.ok) return [];
+
+    const data = (await response.json()) as any;
+
+    return data;
+  } catch (error) {}
+};
 
 io.on("connection", (socket) => {
   users.set(socket.id, socket);
@@ -34,6 +60,22 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("room-deleted", roomId);
   });
 
+  socket.on("get-movies", async (roomId, page) => {
+    const data = await fetchMovies(page);
+    const movies = data.results;
+    const room = rooms.getRoom(roomId);
+
+    if (room) {
+      room.setMovies(movies);
+
+      console.log(room.getMovies().map((m) => m.title));
+
+      io.to(roomId).emit("movies", {
+        movies: room.getMovies(),
+      });
+    }
+  });
+
   // join room and get movies
   socket.on("join-room", (roomId: string) => {
     const room = rooms.getRoom(roomId);
@@ -55,19 +97,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // reset room
-  socket.on("reset-room", (roomId: string) => {
-    const room = rooms.getRoom(roomId);
-
-    if (room) {
-      room.setMovies(defaultMovies);
-      io.to(roomId).emit("movies", {
-        movies: room.getMovies(),
-      });
-    }
-  });
-
-  socket.on("pick-movie", (roomId, movie) => {
+  socket.on("pick-movie", ({ roomId, movie }) => {
     const room = rooms.getRoom(roomId);
 
     if (room) {
@@ -80,21 +110,25 @@ io.on("connection", (socket) => {
 
         const usersPicks = users.map((u) => u.picks);
 
-        for (let i = 0; i < usersPicks.length; i++) {
-          // to be implemented
+        const movies = room.getMovies();
+
+        const index = movies.findIndex((m) => m.title === movie);
+
+        for (let i = 0; i < usersPicks.length - 1; i++) {
+          for (let j = index; j < usersPicks[i].length; j++) {
+            if (usersPicks[i][j] === usersPicks[i + 1][j]) {
+              console.log("matched", usersPicks[i][j]);
+
+              io.to(roomId).emit(
+                "matched",
+                movies.find((m) => m.title === usersPicks[i][j])
+              );
+
+              break;
+            }
+          }
         }
       }
-    }
-  });
-
-  socket.on("filter-movies", (roomId, index) => {
-    const room = rooms.getRoom(roomId);
-
-    if (room) {
-      room.setMovies(room.getMovies().filter((c, i) => i !== index));
-      io.to(roomId).emit("movies", {
-        movies: room.getMovies(),
-      });
     }
   });
 

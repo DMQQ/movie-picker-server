@@ -40,16 +40,17 @@ type TUser = {
   socket: Socket;
   username: string;
   picks: string[];
+
+  finished?: boolean;
 };
 
 export class Room {
   private id: string;
   public readonly host: string;
   public readonly type: string;
-
   private users: Map<string, TUser>;
 
-  private movies: string[];
+  private movies: any[];
 
   constructor(host: string, type: string) {
     this.host = host;
@@ -57,17 +58,7 @@ export class Room {
 
     this.createId();
     this.users = new Map<string, TUser>();
-    this.movies = [
-      "The Matrix",
-      "The Matrix Reloaded",
-      "The Matrix Revolutions",
-      "The Matrix Resurrections",
-      "Harry Potter and the Philosopher's Stone",
-      "Harry Potter and the Chamber of Secrets",
-      "Harry Potter and the Prisoner of Azkaban",
-      "Harry Potter and the Goblet of Fire",
-      "Harry Potter and the Order of the Phoenix",
-    ];
+    this.movies = [];
   }
 
   setMovies(movies: string[]) {
@@ -76,6 +67,16 @@ export class Room {
 
   getMovies() {
     return this.movies;
+  }
+
+  shouldGetMoreMovies() {
+    const users = Array.from(this.users.values());
+
+    if (users.length === 0) return false;
+
+    const allFinished = users.every((usr) => usr.finished);
+
+    return allFinished;
   }
 
   createId() {
@@ -98,6 +99,13 @@ export class Room {
 
   addUser(usr: TUser) {
     this.users.set(usr.socket.id, usr);
+  }
+
+  setUsers(usrs: TUser[]) {
+    this.users = new Map<string, TUser>();
+    usrs.forEach((usr) => {
+      this.users.set(usr.socket.id, usr);
+    });
   }
 
   removeUser(socketId: string) {
