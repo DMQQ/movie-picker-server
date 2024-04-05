@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+
+  <main>
+    <form>
+      <input type="text" id="room_name" />
+      <input type="text" id="nickname" />
+      <button type="submit">Join</button>
+    </form>
+
+    <div></div>
+  </main>
+
+  <body>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io();
+
+      let room_name = "";
+
+      document.querySelector("form").addEventListener("submit", (e) => {
+        e.preventDefault();
+
+        const { value: room_name } = document.querySelector("#room_name");
+        const { value: nickname } = document.querySelector("#nickname");
+
+        socket.emit("join", { room_name, nickname });
+      });
+
+      socket.on("connect", () => {
+        socket.on("message", (data) => {
+          console.log(data);
+        });
+
+        socket.on(room_name, (data) => {
+          console.log(data);
+        });
+
+        socket.on("users", (...args) => {
+          console.log(args);
+        });
+      });
+    </script>
+  </body>
+</html>
