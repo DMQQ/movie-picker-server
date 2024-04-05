@@ -36,6 +36,22 @@ const fetchMovies = async (page = 1) => {
   } catch (error) {}
 };
 
+const fetchOne = async (id: number) => {
+  if (!process.env.TMDB_API_KEY) throw new Error("TMDB_API_KEY not found");
+  try {
+    const response = await fetch(
+      `https://api.themoviedb.org/3/movie/${id}?language=en-US`,
+      options
+    );
+
+    if (!response.ok) throw new Error("Failed to fetch movie");
+
+    const data = (await response.json()) as any;
+
+    return data;
+  } catch (error) {}
+};
+
 io.on("connection", (socket) => {
   users.set(socket.id, socket);
 
@@ -60,18 +76,62 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("room-deleted", roomId);
   });
 
-  socket.on("get-movies", async (roomId, page) => {
-    const data = await fetchMovies(page);
-    const movies = data.results;
+  socket.on("get-buddy-status", (roomId) => {
     const room = rooms.getRoom(roomId);
+    if (room) {
+      const users = Array.from(room.getUsers().values());
+
+      const allFinished = users.every((u) => u.finished);
+
+      if (allFinished) {
+        io.to(roomId).emit("buddy-status", {
+          finished: true,
+        });
+      } else {
+        io.to(roomId).emit("buddy-status", {
+          finished: false,
+        });
+      }
+    }
+  });
+
+  socket.on("finish", async (roomId: string) => {
+    const room = rooms.getRoom(roomId);
+    if (room) {
+      const user = room.getUsers().get(socket.id);
+      if (user) {
+        user.finished = true;
+        const users = Array.from(room.getUsers().values());
+        const allFinished = users.every((u) => u.finished);
+        if (allFinished) {
+          room.nextPage();
+          users.forEach((u) => (u.finished = false));
+
+          const data = await fetchMovies(room.page);
+          const movies = data.results;
+
+          room.setMovies(movies.map((movie: any) => movie.id));
+          io.to(roomId).emit("movies", {
+            movies: movies,
+          });
+        }
+      }
+    }
+  });
+
+  socket.on("get-movies", async (roomId) => {
+    const room = rooms.getRoom(roomId);
+    const data = await fetchMovies(room?.page);
+    const movies = data.results;
 
     if (room) {
-      room.setMovies(movies);
-
-      console.log(room.getMovies().map((m) => m.title));
+      room.setMovies([
+        ...room.getMovies(),
+        ...movies.map((movie: any) => movie.id),
+      ]);
 
       io.to(roomId).emit("movies", {
-        movies: room.getMovies(),
+        movies: movies,
       });
     }
   });
@@ -87,17 +147,14 @@ io.on("connection", (socket) => {
         socket: socket,
         username: "guest",
         picks: [],
+        finished: false,
       });
 
       io.to(roomId).emit("active", Array.from(room.getUsers().keys()));
-
-      io.to(roomId).emit("movies", {
-        movies: room.getMovies(),
-      });
     }
   });
 
-  socket.on("pick-movie", ({ roomId, movie }) => {
+  socket.on("pick-movie", async ({ roomId, movie }) => {
     const room = rooms.getRoom(roomId);
 
     if (room) {
@@ -112,21 +169,29 @@ io.on("connection", (socket) => {
 
         const movies = room.getMovies();
 
-        const index = movies.findIndex((m) => m.title === movie);
+        const index = movies.findIndex((m) => m === movie);
+
+        let matched = 0;
 
         for (let i = 0; i < usersPicks.length - 1; i++) {
           for (let j = index; j < usersPicks[i].length; j++) {
             if (usersPicks[i][j] === usersPicks[i + 1][j]) {
-              console.log("matched", usersPicks[i][j]);
-
-              io.to(roomId).emit(
-                "matched",
-                movies.find((m) => m.title === usersPicks[i][j])
-              );
+              matched = usersPicks[i][j];
 
               break;
             }
           }
+        }
+
+        if (matched !== 0 && matched !== undefined) {
+          const movie = await fetchOne(matched);
+
+          room.addMatchedMovies({
+            id: movie.id,
+            title: movie.title,
+          });
+
+          io.to(roomId).emit("matched", movie);
         }
       }
     }

@@ -39,7 +39,7 @@ export class Rooms {
 type TUser = {
   socket: Socket;
   username: string;
-  picks: string[];
+  picks: number[];
 
   finished?: boolean;
 };
@@ -49,6 +49,12 @@ export class Room {
   public readonly host: string;
   public readonly type: string;
   private users: Map<string, TUser>;
+  private matchedMovies: {
+    id: number;
+    title: string;
+  }[] = [];
+
+  page = 1;
 
   private movies: any[];
 
@@ -61,7 +67,19 @@ export class Room {
     this.movies = [];
   }
 
-  setMovies(movies: string[]) {
+  nextPage() {
+    this.page += 1;
+  }
+
+  getMatchedMovies() {
+    return this.matchedMovies;
+  }
+
+  addMatchedMovies(matchedMovies: any) {
+    this.matchedMovies.push(matchedMovies);
+  }
+
+  setMovies(movies: any[]) {
     this.movies = movies;
   }
 
