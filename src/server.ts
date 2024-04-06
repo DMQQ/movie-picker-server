@@ -13,7 +13,7 @@ const io = new Server(server, {
   cors: {
     origin: "*",
   },
-  transports: ["websocket"],
+  transports: ["websocket", "polling"],
 });
 
 app.use(express.urlencoded({ extended: true }));
