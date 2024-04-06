@@ -88,6 +88,8 @@ const fetchOne = async (id: number, type: string) => {
 io.on("connection", (socket) => {
   users.set(socket.id, socket);
 
+  console.log("connected");
+
   // create room and join room
   socket.on("create-room", (type, pageRange) => {
     if (!paths.includes(type)) return;
@@ -270,8 +272,12 @@ io.engine.on("connection_error", (err) => {
   console.log(err);
 });
 
+const PORT = Number(process.env.PORT) || 3000;
+
+io.listen(PORT);
+
 if (process.env.NODE_ENV === "production") {
-  server.listen(process.env.PORT, () => {
+  server.listen(PORT, "0.0.0.0", () => {
     console.log(`server running at http://localhost:${process.env.PORT}`);
   });
 } else if (process.env.NODE_ENV === "development") {
