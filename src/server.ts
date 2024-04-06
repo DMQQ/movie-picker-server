@@ -274,6 +274,10 @@ io.engine.on("connection_error", (err) => {
 
 const PORT = Number(process.env.PORT) || 3000;
 
+app.get("/", (req, res) => {
+  res.json({ message: "Hello World" });
+});
+
 if (process.env.NODE_ENV === "production") {
   server.listen(PORT, () => {
     console.log(`server running at http://localhost:${process.env.PORT}`);
