@@ -266,6 +266,10 @@ io.on("connection", (socket) => {
   });
 });
 
+io.engine.on("connection_error", (err) => {
+  console.log(err);
+});
+
 if (process.env.NODE_ENV === "production") {
   server.listen(process.env.PORT, () => {
     console.log(`server running at http://localhost:${process.env.PORT}`);
