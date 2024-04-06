@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { Server, Socket } from "socket.io";
 import { Room, Rooms } from "./utils/Room";
 import dotenv from "dotenv";
+import cors from "cors";
 
 dotenv.config();
 
@@ -11,9 +12,12 @@ const server = createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"],
   },
+  transports: ["websocket"],
 });
+
+app.use(express.urlencoded({ extended: true }));
+app.use(cors());
 
 const users = new Map<string, Socket>();
 const rooms = new Rooms();
