@@ -274,10 +274,8 @@ io.engine.on("connection_error", (err) => {
 
 const PORT = Number(process.env.PORT) || 3000;
 
-io.listen(PORT);
-
 if (process.env.NODE_ENV === "production") {
-  server.listen(PORT, "0.0.0.0", () => {
+  server.listen(PORT, () => {
     console.log(`server running at http://localhost:${process.env.PORT}`);
   });
 } else if (process.env.NODE_ENV === "development") {
