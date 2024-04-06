@@ -13,8 +13,19 @@ const io = new Server(server);
 const users = new Map<string, Socket>();
 const rooms = new Rooms();
 
-const url = (props: { page: number }) =>
-  `https://api.themoviedb.org/3/discover/movie?include_adult=true&include_video=false&language=en-US&page=${props.page}&sort_by=popularity.desc`;
+const paths = [
+  "/discover/movie",
+  "/movie/now_playing",
+  "/movie/popular",
+  "/movie/top_rated",
+  "/movie/upcoming",
+  "/tv/top_rated",
+  "/tv/popular",
+  "/tv/airing_today",
+  "/tv/on_the_air",
+  "/discover/tv",
+];
+
 const options = {
   method: "GET",
   headers: {
@@ -23,10 +34,20 @@ const options = {
   },
 };
 
-const fetchMovies = async (page = 1) => {
+const fetchMovies = async (page = 1, path: string) => {
   if (!process.env.TMDB_API_KEY) throw new Error("TMDB_API_KEY not found");
+
+  const url = (props: { page: number; path: string }) =>
+    `https://api.themoviedb.org/3/${props.path}?include_adult=true&include_video=false&language=en-US&page=${props.page}&sort_by=popularity.desc&watch_region=Europe`;
+
   try {
-    const response = await fetch(url({ page }), options);
+    const response = await fetch(
+      url({
+        page: page,
+        path,
+      }),
+      options
+    );
 
     if (!response.ok) return [];
 
@@ -36,13 +57,18 @@ const fetchMovies = async (page = 1) => {
   } catch (error) {}
 };
 
-const fetchOne = async (id: number) => {
+const fetchOne = async (id: number, type: string) => {
+  let url = "";
+
+  if (type.includes("tv")) {
+    url = `https://api.themoviedb.org/3/tv/${id}?language=en-US`;
+  } else if (type.includes("movie")) {
+    url = `https://api.themoviedb.org/3/movie/${id}?language=en-US`;
+  }
+
   if (!process.env.TMDB_API_KEY) throw new Error("TMDB_API_KEY not found");
   try {
-    const response = await fetch(
-      `https://api.themoviedb.org/3/movie/${id}?language=en-US`,
-      options
-    );
+    const response = await fetch(url, options);
 
     if (!response.ok) throw new Error("Failed to fetch movie");
 
@@ -56,8 +82,16 @@ io.on("connection", (socket) => {
   users.set(socket.id, socket);
 
   // create room and join room
-  socket.on("create-room", () => {
-    const room = new Room("dmq", "movies");
+  socket.on("create-room", (type, pageRange) => {
+    if (!paths.includes(type)) return;
+
+    let page = 1;
+
+    if (pageRange > 1) {
+      page = Math.floor(Math.random() * pageRange) + 1;
+    }
+
+    const room = new Room("dmq", type, page);
     const roomId = room.getId();
     room.addUser({
       socket: socket,
@@ -67,6 +101,16 @@ io.on("connection", (socket) => {
 
     socket.emit("room-created", roomId);
     rooms.createRoom(roomId, room);
+  });
+
+  socket.on("get-overview", (roomId) => {
+    const room = rooms.getRoom(roomId);
+
+    if (room) {
+      const matches = room.getMatchedMovies();
+
+      io.to(roomId).emit("overview", matches);
+    }
   });
 
   // delete room and leave room
@@ -105,9 +149,11 @@ io.on("connection", (socket) => {
         const allFinished = users.every((u) => u.finished);
         if (allFinished) {
           room.nextPage();
-          users.forEach((u) => (u.finished = false));
+          users.forEach((u) => {
+            (u.finished = false), (u.picks = []);
+          });
 
-          const data = await fetchMovies(room.page);
+          const data = await fetchMovies(room.page, room.type);
           const movies = data.results;
 
           room.setMovies(movies.map((movie: any) => movie.id));
@@ -121,7 +167,7 @@ io.on("connection", (socket) => {
 
   socket.on("get-movies", async (roomId) => {
     const room = rooms.getRoom(roomId);
-    const data = await fetchMovies(room?.page);
+    const data = await fetchMovies(room?.page, room!.type);
     const movies = data.results;
 
     if (room) {
@@ -184,11 +230,11 @@ io.on("connection", (socket) => {
         }
 
         if (matched !== 0 && matched !== undefined) {
-          const movie = await fetchOne(matched);
+          const movie = await fetchOne(matched, room.type);
 
           room.addMatchedMovies({
             id: movie.id,
-            title: movie.title,
+            title: movie.title ? movie.title : movie.name,
           });
 
           io.to(roomId).emit("matched", movie);
@@ -213,6 +259,12 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(3000, "192.168.0.25", () => {
-  console.log("server running at http://192.168.0.25:3000");
-});
+if (process.env.NODE_ENV === "production") {
+  server.listen(process.env.PORT, () => {
+    console.log(`server running at http://localhost:${process.env.PORT}`);
+  });
+} else if (process.env.NODE_ENV === "development") {
+  server.listen(3000, "192.168.0.25", () => {
+    console.log("server running at http://192.168.0.25:3000");
+  });
+}

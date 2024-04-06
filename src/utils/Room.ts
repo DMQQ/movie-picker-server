@@ -58,13 +58,15 @@ export class Room {
 
   private movies: any[];
 
-  constructor(host: string, type: string) {
+  constructor(host: string, type: string, initialPage: number = 1) {
     this.host = host;
     this.type = type;
 
     this.createId();
     this.users = new Map<string, TUser>();
     this.movies = [];
+
+    this.page = initialPage;
   }
 
   nextPage() {
