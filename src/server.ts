@@ -59,9 +59,7 @@ const fetchMovies = async (page = 1, path: string) => {
     const data = (await response.json()) as any;
 
     return data;
-  } catch (error) {
-    console.log("error", error);
-  }
+  } catch (error) {}
 };
 
 const fetchOne = async (id: number, type: string) => {
@@ -87,8 +85,6 @@ const fetchOne = async (id: number, type: string) => {
 
 io.on("connection", (socket) => {
   users.set(socket.id, socket);
-
-  console.log("connected");
 
   // create room and join room
   socket.on("create-room", (type, pageRange) => {
@@ -274,8 +270,31 @@ io.engine.on("connection_error", (err) => {
 
 const PORT = Number(process.env.PORT) || 3000;
 
-app.get("/", (req, res) => {
-  res.json({ message: "Hello World" });
+app.get("/movies", async (req, res) => {
+  const page = req.query.page as string;
+  const searchType = req.query.searchType as string;
+
+  if (!searchType) return res.status(400).json({ message: "type is required" });
+  if (!page) return res.status(400).json({ message: "page is required" });
+  if (!paths.includes(searchType))
+    return res.status(400).json({ message: "invalid type" });
+
+  const data = await fetchMovies(Number(page), searchType);
+  const movies = data.results;
+
+  res.json(movies);
+});
+
+app.get("/movie/:id", async (req, res) => {
+  const id = req.params.id;
+  const type = req.query.type as string;
+
+  if (!id) return res.status(400).json({ message: "id is required" });
+  if (!type) return res.status(400).json({ message: "type is required" });
+
+  const data = await fetchOne(Number(id), type);
+
+  res.json(data);
 });
 
 if (process.env.NODE_ENV === "production") {
