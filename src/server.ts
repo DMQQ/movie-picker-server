@@ -8,7 +8,12 @@ dotenv.config();
 
 const app = express();
 const server = createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
+});
 
 const users = new Map<string, Socket>();
 const rooms = new Rooms();
@@ -54,7 +59,9 @@ const fetchMovies = async (page = 1, path: string) => {
     const data = (await response.json()) as any;
 
     return data;
-  } catch (error) {}
+  } catch (error) {
+    console.log("error", error);
+  }
 };
 
 const fetchOne = async (id: number, type: string) => {
