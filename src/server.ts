@@ -3,7 +3,9 @@ import { createServer } from "node:http";
 import { Server, Socket } from "socket.io";
 import { Room, Rooms } from "./utils/Room";
 import dotenv from "dotenv";
+import https from "https";
 import cors from "cors";
+import fs from "fs";
 
 dotenv.config();
 
@@ -301,12 +303,20 @@ app.get("/movie/:id", async (req, res) => {
   res.json(data);
 });
 
+const httpsServer = https.createServer(
+  {
+    key: fs.readFileSync("cert/server.key", "utf-8"),
+    cert: fs.readFileSync("cert/server.cert", "utf-8"),
+  },
+  app
+);
+
 if (process.env.NODE_ENV === "production") {
-  server.listen(PORT, () => {
+  httpsServer.listen(PORT, () => {
     console.log(`server running at http://localhost:${process.env.PORT}`);
   });
 } else if (process.env.NODE_ENV === "development") {
-  server.listen(3000, "192.168.0.25", () => {
+  httpsServer.listen(3000, "192.168.0.25", () => {
     console.log("server running at http://192.168.0.25:3000");
   });
 }
