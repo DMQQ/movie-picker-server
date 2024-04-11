@@ -15,6 +15,12 @@ const io = new Server(server, {
   cors: {
     origin: "*",
   },
+  addTrailingSlash: true,
+  allowRequest: (req, callback) => {
+    console.log(req.url);
+    callback(null, true);
+  },
+
   transports: ["websocket", "polling"],
 });
 
@@ -89,8 +95,19 @@ const fetchOne = async (id: number, type: string) => {
   } catch (error) {}
 };
 
+function constructUserIdFromHeaders(socket: Socket) {
+  const userId = socket.handshake.headers["user-id"];
+  const ipAddress =
+    socket.handshake.headers["x-forwarded-for"] || socket.handshake.address;
+  const userAgent = socket.handshake.headers["user-agent"];
+  const constructedUserId = `${userId}-${ipAddress}-${userAgent}`;
+
+  return constructedUserId;
+}
+
 io.on("connection", (socket) => {
-  users.set(socket.id, socket);
+  const userId = constructUserIdFromHeaders(socket);
+  users.set(userId, socket);
 
   // create room and join room
   socket.on("create-room", (type, pageRange) => {
@@ -105,6 +122,7 @@ io.on("connection", (socket) => {
     const room = new Room("dmq", type, page);
     const roomId = room.getId();
     room.addUser({
+      userId,
       socket: socket,
       username: "host",
       picks: [],
@@ -153,7 +171,7 @@ io.on("connection", (socket) => {
   socket.on("finish", async (roomId: string) => {
     const room = rooms.getRoom(roomId);
     if (room) {
-      const user = room.getUsers().get(socket.id);
+      const user = room.getUsers().get(userId);
       if (user) {
         user.finished = true;
         const users = Array.from(room.getUsers().values());
@@ -201,6 +219,7 @@ io.on("connection", (socket) => {
       socket.join(roomId);
       socket.emit("room-joined", room);
       room?.addUser({
+        userId,
         socket: socket,
         username: "guest",
         picks: [],
@@ -215,7 +234,7 @@ io.on("connection", (socket) => {
     const room = rooms.getRoom(roomId);
 
     if (room) {
-      const user = room.getUsers().get(socket.id);
+      const user = room.getUsers().get(userId);
 
       if (user) {
         user.picks.push(movie);
@@ -259,14 +278,15 @@ io.on("connection", (socket) => {
     const room = rooms.getRoom(roomId);
 
     if (room) {
-      room.removeUser(socket.id);
+      room.removeUser(userId);
       socket.leave(roomId);
       io.emit("active", Array.from(room.getUsers().keys()));
     }
   });
 
   socket.on("disconnect", () => {
-    users.delete(socket.id);
+    users.delete(userId);
+    socket.disconnect();
   });
 });
 

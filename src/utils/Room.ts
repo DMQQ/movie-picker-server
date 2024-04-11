@@ -37,6 +37,7 @@ export class Rooms {
 }
 
 type TUser = {
+  userId: string;
   socket: Socket;
   username: string;
   picks: number[];
@@ -118,13 +119,13 @@ export class Room {
   }
 
   addUser(usr: TUser) {
-    this.users.set(usr.socket.id, usr);
+    this.users.set(usr.userId, usr);
   }
 
   setUsers(usrs: TUser[]) {
     this.users = new Map<string, TUser>();
     usrs.forEach((usr) => {
-      this.users.set(usr.socket.id, usr);
+      this.users.set(usr.userId, usr);
     });
   }
 
