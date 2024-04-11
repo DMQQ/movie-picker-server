@@ -16,10 +16,6 @@ const io = new Server(server, {
     origin: "*",
   },
   addTrailingSlash: true,
-  allowRequest: (req, callback) => {
-    console.log(req.url);
-    callback(null, true);
-  },
 
   transports: ["websocket", "polling"],
 });
@@ -51,11 +47,19 @@ const options = {
   },
 };
 
-const fetchMovies = async (page = 1, path: string) => {
+const fetchMovies = async (page = 1, path: string, genres: number[] = []) => {
   if (!process.env.TMDB_API_KEY) throw new Error("TMDB_API_KEY not found");
 
-  const url = (props: { page: number; path: string }) =>
-    `https://api.themoviedb.org/3/${props.path}?include_adult=true&include_video=false&language=en-US&page=${props.page}&sort_by=popularity.desc&watch_region=Europe`;
+  const url = (props: { page: number; path: string }) => {
+    const { page, path } = props;
+    let url = `https://api.themoviedb.org/3${path}?api_key=${process.env.TMDB_API_KEY}&language=en-US&page=${page}&watch_region=Europe&sort_by=popularity.desc`;
+
+    if (genres.length > 0 && genres?.[0] !== 0) {
+      url += `&with_genres=${genres.join("|")}`;
+    }
+
+    return url;
+  };
 
   try {
     const response = await fetch(
@@ -110,26 +114,21 @@ io.on("connection", (socket) => {
   users.set(userId, socket);
 
   // create room and join room
-  socket.on("create-room", (type, pageRange) => {
+  socket.on("create-room", (type, pageRange = 1, genres: number[] = []) => {
     if (!paths.includes(type)) return;
 
-    let page = 1;
+    const room = new Room()
+      .setAdminUser({
+        userId,
+        socket,
+        username: "host",
+      })
+      .setType(type)
+      .setPage(Math.floor(Math.random() * pageRange) + 1)
+      .setGenres(genres);
 
-    if (pageRange > 1) {
-      page = Math.floor(Math.random() * pageRange) + 1;
-    }
-
-    const room = new Room("dmq", type, page);
-    const roomId = room.getId();
-    room.addUser({
-      userId,
-      socket: socket,
-      username: "host",
-      picks: [],
-    });
-
-    socket.emit("room-created", roomId);
-    rooms.createRoom(roomId, room);
+    rooms.createRoom(room.getId(), room);
+    socket.emit("room-created", room.getId());
   });
 
   socket.on("get-overview", (roomId) => {
@@ -139,6 +138,20 @@ io.on("connection", (socket) => {
       const matches = room.getMatchedMovies();
 
       io.to(roomId).emit("overview", matches);
+    }
+  });
+
+  socket.on("get-room-details", (roomId) => {
+    const room = rooms.getRoom(roomId);
+
+    if (room) {
+      io.to(roomId).emit("room-details", {
+        name: room.name,
+        host: room.host,
+        type: room.type,
+        page: room.page,
+        users: Array.from(room.getUsers().keys()),
+      });
     }
   });
 
@@ -182,7 +195,7 @@ io.on("connection", (socket) => {
             (u.finished = false), (u.picks = []);
           });
 
-          const data = await fetchMovies(room.page, room.type);
+          const data = await fetchMovies(room.page, room.type, room.genres);
           const movies = data.results;
 
           room.setMovies(movies.map((movie: any) => movie.id));
@@ -196,7 +209,7 @@ io.on("connection", (socket) => {
 
   socket.on("get-movies", async (roomId) => {
     const room = rooms.getRoom(roomId);
-    const data = await fetchMovies(room?.page, room!.type);
+    const data = await fetchMovies(room?.page, room!.type, room?.genres);
     const movies = data.results;
 
     if (room) {
@@ -305,10 +318,50 @@ app.get("/movies", async (req, res) => {
   if (!paths.includes(searchType))
     return res.status(400).json({ message: "invalid type" });
 
-  const data = await fetchMovies(Number(page), searchType);
+  const data = await fetchMovies(Number(page), searchType, []);
   const movies = data.results;
 
   res.json(movies);
+});
+
+app.get("/movie/genres/:type", async (req, res) => {
+  const type = req.params.type;
+
+  if (!type) return res.status(400).json({ message: "type is required" });
+  if (!type.includes("movie") && !type.includes("tv"))
+    return res.status(400).json({ message: "invalid type" });
+
+  const url = `https://api.themoviedb.org/3/genre/${type}/list?language=en-US`;
+
+  try {
+    const response = await fetch(url, options);
+
+    if (!response.ok) throw new Error("Failed to fetch genres");
+
+    const data = (await response.json()) as any;
+
+    res.json(data.genres);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch genres" });
+  }
+});
+
+app.get("/movie/max-count", async (req, res) => {
+  const type = req.query.type as string;
+
+  if (!type) return res.status(400).json({ message: "type is required" });
+  if (!type.includes("movie") && !type.includes("tv"))
+    return res.status(400).json({ message: "invalid type" });
+
+  try {
+    const genres = (req.query.genres || "").toString().split(",") as string[];
+
+    const response = await fetchMovies(1, type, genres.map(Number));
+
+    res.json({
+      maxCount: response.total_pages,
+    });
+  } catch (error) {}
 });
 
 app.get("/movie/:id", async (req, res) => {
@@ -322,14 +375,6 @@ app.get("/movie/:id", async (req, res) => {
 
   res.json(data);
 });
-
-// const httpsServer = https.createServer(
-//   {
-//     key: fs.readFileSync("cert/server.key", "utf-8"),
-//     cert: fs.readFileSync("cert/server.cert", "utf-8"),
-//   },
-//   app
-// );
 
 if (process.env.NODE_ENV === "production") {
   server.listen(PORT, () => {

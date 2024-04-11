@@ -43,31 +43,55 @@ type TUser = {
   picks: number[];
 
   finished?: boolean;
+
+  isAdmin?: boolean;
 };
 
 export class Room {
   private id: string;
-  public readonly host: string;
-  public readonly type: string;
+  public host: string;
+  public type: "movie" | "tv";
   private users: Map<string, TUser>;
   private matchedMovies: {
     id: number;
     title: string;
   }[] = [];
 
+  genres: number[];
+
+  name = "Room";
+
   page = 1;
 
   private movies: any[];
 
-  constructor(host: string, type: string, initialPage: number = 1) {
-    this.host = host;
-    this.type = type;
+  constructor() {
+    // this.host = host;
+    // this.type = type;
 
     this.createId();
     this.users = new Map<string, TUser>();
     this.movies = [];
 
-    this.page = initialPage;
+    //  this.page = initialPage;
+  }
+
+  setType(type: typeof Room.prototype.type) {
+    this.type = type;
+
+    return this;
+  }
+
+  setGenres(genres: number[]) {
+    this.genres = genres;
+
+    return this;
+  }
+
+  setPage(page: number) {
+    this.page = page;
+
+    return this;
   }
 
   nextPage() {
@@ -122,11 +146,20 @@ export class Room {
     this.users.set(usr.userId, usr);
   }
 
-  setUsers(usrs: TUser[]) {
+  setUsers(usrs: Omit<TUser, "picks">[]) {
     this.users = new Map<string, TUser>();
     usrs.forEach((usr) => {
-      this.users.set(usr.userId, usr);
+      this.users.set(usr.userId, { ...usr, picks: [] });
     });
+
+    return this;
+  }
+
+  setAdminUser(user: Omit<TUser, "picks">) {
+    this.users.set(user.userId, { ...user, isAdmin: true, picks: [] });
+    this.host = user.userId;
+
+    return this;
   }
 
   removeUser(socketId: string) {
