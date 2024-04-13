@@ -3,9 +3,8 @@ import { createServer } from "node:http";
 import { Server, Socket } from "socket.io";
 import { Room, Rooms } from "./utils/Room";
 import dotenv from "dotenv";
-import https from "https";
 import cors from "cors";
-import fs from "fs";
+import { MovieManager } from "./utils/MovieManager";
 
 dotenv.config();
 
@@ -32,11 +31,11 @@ const paths = [
   "/movie/popular",
   "/movie/top_rated",
   "/movie/upcoming",
+  "/discover/tv",
   "/tv/top_rated",
   "/tv/popular",
   "/tv/airing_today",
   "/tv/on_the_air",
-  "/discover/tv",
 ];
 
 const options = {
@@ -47,57 +46,7 @@ const options = {
   },
 };
 
-const fetchMovies = async (page = 1, path: string, genres: number[] = []) => {
-  if (!process.env.TMDB_API_KEY) throw new Error("TMDB_API_KEY not found");
-
-  const url = (props: { page: number; path: string }) => {
-    const { page, path } = props;
-    let url = `https://api.themoviedb.org/3${path}?api_key=${process.env.TMDB_API_KEY}&language=en-US&page=${page}&watch_region=Europe&sort_by=popularity.desc`;
-
-    if (genres.length > 0 && genres?.[0] !== 0) {
-      url += `&with_genres=${genres.join("|")}`;
-    }
-
-    return url;
-  };
-
-  try {
-    const response = await fetch(
-      url({
-        page: page,
-        path,
-      }),
-      options
-    );
-
-    if (!response.ok) return [];
-
-    const data = (await response.json()) as any;
-
-    return data;
-  } catch (error) {}
-};
-
-const fetchOne = async (id: number, type: string) => {
-  let url = "";
-
-  if (type.includes("tv")) {
-    url = `https://api.themoviedb.org/3/tv/${id}?language=en-US`;
-  } else if (type.includes("movie")) {
-    url = `https://api.themoviedb.org/3/movie/${id}?language=en-US`;
-  }
-
-  if (!process.env.TMDB_API_KEY) throw new Error("TMDB_API_KEY not found");
-  try {
-    const response = await fetch(url, options);
-
-    if (!response.ok) throw new Error("Failed to fetch movie");
-
-    const data = (await response.json()) as any;
-
-    return data;
-  } catch (error) {}
-};
+const movieManager = new MovieManager(process.env.TMDB_API_KEY!);
 
 function constructUserIdFromHeaders(socket: Socket) {
   const userId = socket.handshake.headers["user-id"];
@@ -109,203 +58,214 @@ function constructUserIdFromHeaders(socket: Socket) {
   return constructedUserId;
 }
 
-io.on("connection", (socket) => {
-  const userId = constructUserIdFromHeaders(socket);
-  users.set(userId, socket);
+(() => {
+  io.on("connection", (socket) => {
+    const userId = constructUserIdFromHeaders(socket);
+    users.set(userId, socket);
 
-  // create room and join room
-  socket.on("create-room", (type, pageRange = 1, genres: number[] = []) => {
-    if (!paths.includes(type)) return;
+    // create room and join room
+    socket.on("create-room", (type, pageRange = 1, genres: number[] = []) => {
+      if (!paths.includes(type)) return;
 
-    const room = new Room()
-      .setAdminUser({
-        userId,
-        socket,
-        username: "host",
-      })
-      .setType(type)
-      .setPage(Math.floor(Math.random() * pageRange) + 1)
-      .setGenres(genres);
+      const room = new Room()
+        .setAdminUser({
+          userId,
+          socket,
+          username: "host",
+        })
+        .setType(type)
+        .setPage(Math.floor(Math.random() * pageRange) + 1)
+        .setGenres(genres);
 
-    rooms.createRoom(room.getId(), room);
-    socket.emit("room-created", room.getId());
-  });
+      rooms.createRoom(room.getId(), room);
+      socket.emit("room-created", room.getId());
+    });
 
-  socket.on("get-overview", (roomId) => {
-    const room = rooms.getRoom(roomId);
+    socket.on("get-overview", (roomId: string) => {
+      const room = rooms.getRoom(roomId);
 
-    if (room) {
-      const matches = room.getMatchedMovies();
+      if (room) {
+        io.to(roomId).emit("overview", room.getMatchedMovies());
+      }
+    });
 
-      io.to(roomId).emit("overview", matches);
-    }
-  });
+    socket.on("get-room-details", (roomId) => {
+      const room = rooms.getRoom(roomId);
 
-  socket.on("get-room-details", (roomId) => {
-    const room = rooms.getRoom(roomId);
-
-    if (room) {
-      io.to(roomId).emit("room-details", {
-        name: room.name,
-        host: room.host,
-        type: room.type,
-        page: room.page,
-        users: Array.from(room.getUsers().keys()),
-      });
-    }
-  });
-
-  // delete room and leave room
-  socket.on("delete-room", (roomId: string) => {
-    rooms.deleteRoom(roomId);
-    socket.leave(roomId);
-    io.to(roomId).emit("room-deleted", roomId);
-  });
-
-  socket.on("get-buddy-status", (roomId) => {
-    const room = rooms.getRoom(roomId);
-    if (room) {
-      const users = Array.from(room.getUsers().values());
-
-      const allFinished = users.every((u) => u.finished);
-
-      if (allFinished) {
-        io.to(roomId).emit("buddy-status", {
-          finished: true,
-        });
-      } else {
-        io.to(roomId).emit("buddy-status", {
-          finished: false,
+      if (room) {
+        io.to(roomId).emit("room-details", {
+          ...room.getRoomDetails(),
+          users: Array.from(room.getUsers().keys()),
         });
       }
-    }
-  });
+    });
 
-  socket.on("finish", async (roomId: string) => {
-    const room = rooms.getRoom(roomId);
-    if (room) {
-      const user = room.getUsers().get(userId);
-      if (user) {
-        user.finished = true;
+    // delete room and leave room
+    socket.on("delete-room", (roomId: string) => {
+      rooms.deleteRoom(roomId);
+      socket.leave(roomId);
+      io.to(roomId).emit("room-deleted", roomId);
+    });
+
+    socket.on("get-buddy-status", (roomId) => {
+      const room = rooms.getRoom(roomId);
+      if (room) {
         const users = Array.from(room.getUsers().values());
+
         const allFinished = users.every((u) => u.finished);
+
         if (allFinished) {
-          room.nextPage();
-          users.forEach((u) => {
-            (u.finished = false), (u.picks = []);
+          io.to(roomId).emit("buddy-status", {
+            finished: true,
           });
-
-          const data = await fetchMovies(room.page, room.type, room.genres);
-          const movies = data.results;
-
-          room.setMovies(movies.map((movie: any) => movie.id));
-          io.to(roomId).emit("movies", {
-            movies: movies,
+        } else {
+          io.to(roomId).emit("buddy-status", {
+            finished: false,
           });
         }
       }
-    }
-  });
+    });
 
-  socket.on("get-movies", async (roomId) => {
-    const room = rooms.getRoom(roomId);
-    const data = await fetchMovies(room?.page, room!.type, room?.genres);
-    const movies = data.results;
+    socket.on("finish", async (roomId: string) => {
+      const room = rooms.getRoom(roomId);
+      if (room) {
+        const user = room.getUsers().get(userId);
+        if (user) {
+          user.finished = true;
+          const users = Array.from(room.getUsers().values());
+          const allFinished = users.every((u) => u.finished);
+          if (allFinished) {
+            room.nextPage();
+            users.forEach((u) => {
+              (u.finished = false), (u.picks = []);
+            });
 
-    if (room) {
-      room.setMovies([
-        ...room.getMovies(),
-        ...movies.map((movie: any) => movie.id),
-      ]);
+            const data = await movieManager.getMoviesAsync<any>({
+              page: room.page,
+              path: room.type,
+              genre: room.genres,
+            });
+            const movies = data.results;
 
-      io.to(roomId).emit("movies", {
-        movies: movies,
-      });
-    }
-  });
-
-  // join room and get movies
-  socket.on("join-room", (roomId: string) => {
-    const room = rooms.getRoom(roomId);
-
-    if (room) {
-      socket.join(roomId);
-      socket.emit("room-joined", room);
-      room?.addUser({
-        userId,
-        socket: socket,
-        username: "guest",
-        picks: [],
-        finished: false,
-      });
-
-      io.to(roomId).emit("active", Array.from(room.getUsers().keys()));
-    }
-  });
-
-  socket.on("pick-movie", async ({ roomId, movie }) => {
-    const room = rooms.getRoom(roomId);
-
-    if (room) {
-      const user = room.getUsers().get(userId);
-
-      if (user) {
-        user.picks.push(movie);
-
-        const users = Array.from(room.getUsers().values());
-
-        const usersPicks = users.map((u) => u.picks);
-
-        const movies = room.getMovies();
-
-        const index = movies.findIndex((m) => m === movie);
-
-        let matched = 0;
-
-        for (let i = 0; i < usersPicks.length - 1; i++) {
-          for (let j = index; j < usersPicks[i].length; j++) {
-            if (usersPicks[i][j] === usersPicks[i + 1][j]) {
-              matched = usersPicks[i][j];
-
-              break;
-            }
+            room.setMovies(movies.map((movie: any) => movie.id));
+            io.to(roomId).emit("movies", {
+              movies: movies,
+            });
           }
         }
+      }
+    });
 
-        if (matched !== 0 && matched !== undefined) {
-          const movie = await fetchOne(matched, room.type);
+    socket.on("get-movies", async (roomId) => {
+      const room = rooms.getRoom(roomId);
 
-          room.addMatchedMovies({
-            id: movie.id,
-            title: movie.title ? movie.title : movie.name,
-          });
+      if (room) {
+        const data = await movieManager.getMoviesAsync<any>({
+          page: room.page,
+          path: room.type,
+          genre: room.genres,
+        });
+        const movies = data.results;
 
-          io.to(roomId).emit("matched", movie);
+        room.setMovies([
+          ...room.getMovies(),
+          ...movies.map((movie: any) => movie.id),
+        ]);
+
+        io.to(roomId).emit("movies", {
+          movies: movies,
+        });
+      }
+    });
+
+    // join room and get movies
+    socket.on("join-room", (roomId: string) => {
+      const room = rooms.getRoom(roomId);
+
+      if (room) {
+        socket.join(roomId);
+        socket.emit("room-joined", room);
+        room?.addUser({
+          userId,
+          socket: socket,
+          username: "guest",
+          picks: [],
+          finished: false,
+        });
+
+        io.to(roomId).emit("active", Array.from(room.getUsers().keys()));
+      }
+    });
+
+    socket.on("pick-movie", async ({ roomId, movie }) => {
+      const room = rooms.getRoom(roomId);
+
+      if (room) {
+        const user = room.getUsers().get(userId);
+
+        if (user) {
+          user.picks.push(movie);
+
+          const users = Array.from(room.getUsers().values());
+
+          const usersPicks = users.map((u) => u.picks);
+
+          const movies = room.getMovies();
+
+          const index = movies.findIndex((m) => m === movie);
+
+          let matched = 0;
+
+          for (let i = 0; i < usersPicks.length - 1; i++) {
+            for (let j = index; j < usersPicks[i].length; j++) {
+              if (usersPicks[i][j] === usersPicks[i + 1][j]) {
+                matched = usersPicks[i][j];
+
+                break;
+              }
+            }
+          }
+
+          if (matched !== 0 && matched !== undefined) {
+            let movie: { id: number; title?: string; name?: string };
+            if (room.type.includes("movie")) {
+              movie = await movieManager.getMovieDetailsAsync<any>(matched);
+            } else {
+              movie = await movieManager.getSerieDetailsAsync<any>(matched);
+            }
+
+            room.addMatchedMovies({
+              id: movie.id,
+              title: movie.title ? movie.title : movie.name,
+            });
+
+            io.to(roomId).emit("matched", movie);
+          }
         }
       }
-    }
+    });
+
+    // remove user from room and leave room on disconnect
+    socket.on("leave-room", (roomId: string) => {
+      const room = rooms.getRoom(roomId);
+
+      if (room) {
+        room.removeUser(userId);
+        socket.leave(roomId);
+        io.emit("active", Array.from(room.getUsers().keys()));
+      }
+    });
+
+    socket.on("disconnect", () => {
+      users.delete(userId);
+      socket.disconnect();
+    });
   });
 
-  // remove user from room and leave room on disconnect
-  socket.on("leave-room", (roomId: string) => {
-    const room = rooms.getRoom(roomId);
-
-    if (room) {
-      room.removeUser(userId);
-      socket.leave(roomId);
-      io.emit("active", Array.from(room.getUsers().keys()));
-    }
+  io.engine.on("connection_error", (err) => {
+    console.log(err);
   });
-
-  socket.on("disconnect", () => {
-    users.delete(userId);
-    socket.disconnect();
-  });
-});
-
-io.engine.on("connection_error", (err) => {
-  console.log(err);
-});
+})();
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -318,8 +278,15 @@ app.get("/movies", async (req, res) => {
   if (!paths.includes(searchType))
     return res.status(400).json({ message: "invalid type" });
 
-  const data = await fetchMovies(Number(page), searchType, []);
-  const movies = data.results;
+  const data = await movieManager.getMoviesAsync<any>({
+    page: Number(page),
+    path: searchType,
+    genre: [],
+  });
+
+  console.log(data);
+
+  const movies = data?.results;
 
   res.json(movies);
 });
@@ -348,6 +315,7 @@ app.get("/movie/genres/:type", async (req, res) => {
 
 app.get("/movie/max-count", async (req, res) => {
   const type = req.query.type as string;
+  const page = (req.query.page as string) || "1";
 
   if (!type) return res.status(400).json({ message: "type is required" });
   if (!type.includes("movie") && !type.includes("tv"))
@@ -356,12 +324,18 @@ app.get("/movie/max-count", async (req, res) => {
   try {
     const genres = (req.query.genres || "").toString().split(",") as string[];
 
-    const response = await fetchMovies(1, type, genres.map(Number));
+    const response = await movieManager.getMoviesAsync<any>({
+      path: type,
+      genre: genres.map((g) => Number(g)),
+      page: Number(page),
+    });
 
     res.json({
-      maxCount: response.total_pages,
+      maxCount: response.total_pages >= 500 ? 500 : response.total_pages,
     });
-  } catch (error) {}
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch max count" });
+  }
 });
 
 app.get("/movie/:id", async (req, res) => {
@@ -371,9 +345,15 @@ app.get("/movie/:id", async (req, res) => {
   if (!id) return res.status(400).json({ message: "id is required" });
   if (!type) return res.status(400).json({ message: "type is required" });
 
-  const data = await fetchOne(Number(id), type);
+  if (type.includes("movie")) {
+    const data = await movieManager.getMovieDetailsAsync(Number(id));
 
-  res.json(data);
+    res.json(data);
+  } else {
+    const data = await movieManager.getSerieDetailsAsync(Number(id));
+
+    res.json(data);
+  }
 });
 
 if (process.env.NODE_ENV === "production") {

@@ -65,6 +65,17 @@ export class Room {
 
   private movies: any[];
 
+  getRoomDetails() {
+    return {
+      id: this.id,
+      host: this.host,
+      users: Array.from(this.users.values()),
+      type: this.type,
+      genres: this.genres,
+      page: this.page,
+    };
+  }
+
   constructor() {
     // this.host = host;
     // this.type = type;
