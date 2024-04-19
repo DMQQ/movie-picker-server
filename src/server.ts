@@ -102,9 +102,11 @@ function constructUserIdFromHeaders(socket: Socket) {
 
     // delete room and leave room
     socket.on("delete-room", (roomId: string) => {
-      rooms.deleteRoom(roomId);
-      socket.leave(roomId);
-      io.to(roomId).emit("room-deleted", roomId);
+      if (rooms.getRoom(roomId)?.getHost() === userId) {
+        rooms.deleteRoom(roomId);
+        socket.leave(roomId);
+        io.to(roomId).emit("room-deleted", roomId);
+      }
     });
 
     socket.on("get-buddy-status", (roomId) => {
@@ -114,15 +116,9 @@ function constructUserIdFromHeaders(socket: Socket) {
 
         const allFinished = users.every((u) => u.finished);
 
-        if (allFinished) {
-          io.to(roomId).emit("buddy-status", {
-            finished: true,
-          });
-        } else {
-          io.to(roomId).emit("buddy-status", {
-            finished: false,
-          });
-        }
+        io.to(roomId).emit("buddy-status", {
+          finished: allFinished,
+        });
       }
     });
 
@@ -284,8 +280,6 @@ app.get("/movies", async (req, res) => {
     genre: [],
   });
 
-  console.log(data);
-
   const movies = data?.results;
 
   res.json(movies);
@@ -355,6 +349,26 @@ app.get("/movie/:id", async (req, res) => {
     res.json(data);
   }
 });
+
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error(err.stack);
+  res.status(500).send("Something broke!");
+});
+
+// app.get("/movie/:id/images", async (req, res) => {
+//   const id = req.params.id;
+//   const type = req.query.type as string;
+
+//   if (!id) return res.status(400).json({ message: "id is required" });
+//   if (!type) return res.status(400).json({ message: "type is required" });
+
+//   const data = await movieManager.getImagesAsync(
+//     Number(id),
+//     type.includes("movie") ? "movie" : "tv"
+//   );
+
+//   res.json(data);
+// });
 
 if (process.env.NODE_ENV === "production") {
   server.listen(PORT, () => {

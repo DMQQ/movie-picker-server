@@ -110,4 +110,28 @@ export class MovieManager {
       return null;
     }
   }
+
+  async getImagesAsync(id: number, type: "movie" | "tv") {
+    if (!this.TMDB_API_KEY)
+      throw new Error("TMDB_API_KEY is not set in .env file");
+
+    const url = `https://api.themoviedb.org/3/${type}/${id}/images`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${this.TMDB_API_KEY}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch images");
+    }
+
+    const data = await response.json();
+
+    return data;
+  }
 }
