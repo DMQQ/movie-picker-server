@@ -43,10 +43,7 @@ const movieManager = new MovieManager(process.env.TMDB_API_KEY!);
 
 function constructUserIdFromHeaders(socket: Socket) {
   const userId = socket.handshake.headers["user-id"];
-  const ipAddress =
-    socket.handshake.headers["x-forwarded-for"] || socket.handshake.address;
-  const userAgent = socket.handshake.headers["user-agent"];
-  const constructedUserId = `${userId}-${ipAddress}-${userAgent}`;
+  const constructedUserId = `${userId}-${socket.id}`;
 
   return constructedUserId;
 }
@@ -128,7 +125,6 @@ function constructUserIdFromHeaders(socket: Socket) {
             });
             const movies = data.results;
 
-            // room.setMovies(movies.map((movie: any) => movie.id));
             room.setMovies(movies);
             io.to(roomId).emit("movies", {
               movies: movies,
@@ -151,20 +147,28 @@ function constructUserIdFromHeaders(socket: Socket) {
           username: "guest",
         });
 
-        const data = await movieManager.getMoviesAsync<any>({
-          page: room.page,
-          path: room.type,
-          genre: room.genres,
-        });
-        const movies = data.results;
+        let movies = [];
+
+        if (room.getMovies().length === 0) {
+          const data = await movieManager.getMoviesAsync<any>({
+            page: room.page,
+            path: room.type,
+            genre: room.genres,
+          });
+          movies = data.results;
+        }
 
         room.setMovies(movies);
 
-        io.to(roomId).emit("movies", {
+        // io.to(roomId).emit("movies", {
+        //   movies: movies,
+        // });
+
+        io.to(socket.id).emit("movies", {
           movies: movies,
         });
 
-        io.to(roomId).emit("room-details", {
+        io.to(socket.id).emit("room-details", {
           ...room.getRoomDetails(),
           users: Array.from(room.getUsers().keys()),
         });
