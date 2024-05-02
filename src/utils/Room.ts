@@ -153,8 +153,12 @@ export class Room {
     return this.users;
   }
 
-  addUser(usr: TUser) {
-    this.users.set(usr.userId, usr);
+  addUser(usr: Omit<TUser, "picks" | "finished">) {
+    this.users.set(usr.userId, {
+      ...usr,
+      picks: [],
+      finished: false,
+    });
   }
 
   setUsers(usrs: Omit<TUser, "picks">[]) {
