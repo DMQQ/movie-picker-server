@@ -18,12 +18,25 @@ const io = new Server(server, {
   addTrailingSlash: true,
 
   transports: ["websocket", "polling"],
+
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 10000,
+  },
+
+  pingInterval: 5000,
 });
 
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
-const users = new Map<string, Socket>();
+interface ConnectedUser {
+  socket: {
+    id: Socket["id"];
+  };
+  roomId: string;
+}
+
+const users = new Map<string, ConnectedUser>();
 const rooms = new Rooms();
 
 const paths = [
@@ -51,7 +64,10 @@ function constructUserIdFromHeaders(socket: Socket) {
 (() => {
   io.on("connection", (socket) => {
     const userId = constructUserIdFromHeaders(socket);
-    users.set(userId, socket);
+    users.set(userId, {
+      socket: socket,
+      roomId: "",
+    });
 
     // create room and join room
     socket.on("create-room", (type, pageRange = 1, genres: number[] = []) => {
@@ -140,6 +156,10 @@ function constructUserIdFromHeaders(socket: Socket) {
       if (room) {
         socket.join(roomId);
         socket.emit("room-joined", room);
+        users.set(userId, {
+          socket: socket,
+          roomId: roomId,
+        });
 
         room?.addUser({
           userId,
@@ -159,10 +179,6 @@ function constructUserIdFromHeaders(socket: Socket) {
         }
 
         room.setMovies(movies);
-
-        // io.to(roomId).emit("movies", {
-        //   movies: movies,
-        // });
 
         io.to(socket.id).emit("movies", {
           movies: movies,
@@ -228,6 +244,15 @@ function constructUserIdFromHeaders(socket: Socket) {
     });
 
     socket.on("disconnect", () => {
+      const roomId = users.get(userId)?.roomId;
+
+      if (roomId) {
+        const room = rooms.getRoom(roomId);
+        if (room) {
+          room.removeUser(userId);
+          io.to(roomId).emit("active", Array.from(room.getUsers().keys()));
+        }
+      }
       users.delete(userId);
       socket.disconnect();
     });

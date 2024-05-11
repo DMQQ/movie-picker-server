@@ -16,7 +16,33 @@ export class MovieManager {
   }
 
   private url(path: string, page = 1) {
-    return `https://api.themoviedb.org/3${path}?api_key=${this.TMDB_API_KEY}&language=en-US&page=${page}&watch_region=Europe&sort_by=popularity.desc&include_adult=true&without_keywords=Anime`;
+    console.log(path);
+    return `https://api.themoviedb.org/3${path}?api_key=${this.TMDB_API_KEY}&language=en-US&page=${page}&sort_by=popularity.desc&include_adult=true&without_keywords=Anime,Talk&region=PL&with_watch_monetization_types=flatrate,free,ads,rent,purchase`;
+  }
+
+  async getLandingPageMovies() {
+    try {
+      let url = `https://api.themoviedb.org/3/trending/all/day?language=en-US`;
+
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Bearer ${this.TMDB_API_KEY}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch movies");
+      }
+
+      const data = await response.json();
+
+      return data;
+    } catch (error) {
+      return null;
+    }
   }
 
   async getMoviesAsync<T>(options: GetMoviesAsyncOptions): Promise<T | null> {
@@ -42,7 +68,6 @@ export class MovieManager {
       });
 
       if (!response.ok) {
-        console.log(await response.json());
         throw new Error("Failed to fetch movies");
       }
 
@@ -133,5 +158,36 @@ export class MovieManager {
     const data = await response.json();
 
     return data;
+  }
+
+  async getMovieProvider(id: number, locale: string, type: "movie" | "tv") {
+    let url = "";
+
+    if (type === "tv") {
+      url = `https://api.themoviedb.org/3/tv/${id}/watch/providers`;
+    } else {
+      url = `https://api.themoviedb.org/3/movie/${id}/watch/providers`;
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Bearer ${this.TMDB_API_KEY}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch movie providers");
+      }
+
+      const data = await response.json();
+
+      return data?.["results"]?.[locale.toUpperCase()];
+    } catch (error) {
+      return [];
+    }
   }
 }

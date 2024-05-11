@@ -32,6 +32,22 @@ const moviesRouter = Router();
 
 const movieManager = new MovieManager(process.env.TMDB_API_KEY!);
 
+moviesRouter.get("/landing", async (req, res) => {
+  try {
+    const trending = await movieManager.getLandingPageMovies();
+
+    res.json(
+      trending.results.map((movie: any) => ({
+        id: movie.id,
+        poster_path: movie.poster_path,
+        title: movie.title,
+      }))
+    );
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch landing page movies" });
+  }
+});
+
 moviesRouter.get("/movies", async (req, res) => {
   const page = req.query.page as string;
   const searchType = req.query.searchType as string;
@@ -96,6 +112,26 @@ moviesRouter.get("/movie/max-count", async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch max count" });
+  }
+});
+
+moviesRouter.get("/movie/providers/:id", async (req, res) => {
+  const id = req.params.id;
+
+  if (!id) return res.status(400).json({ message: "id is required" });
+
+  req.query.type = req.query.type || "movie";
+
+  try {
+    const response = await movieManager.getMovieProvider(
+      Number(id),
+      "PL",
+      req.query.type as "tv" | "movie"
+    );
+
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch providers" });
   }
 });
 
