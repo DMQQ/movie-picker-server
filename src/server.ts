@@ -150,7 +150,7 @@ function constructUserIdFromHeaders(socket: Socket) {
       }
     });
 
-    socket.on("join-room", async (roomId: string) => {
+    socket.on("join-room", async (roomId: string, username = "guest") => {
       const room = rooms.getRoom(roomId);
 
       if (room) {
@@ -164,7 +164,7 @@ function constructUserIdFromHeaders(socket: Socket) {
         room?.addUser({
           userId,
           socket: socket,
-          username: "guest",
+          username: username,
         });
 
         let movies = [];
@@ -189,7 +189,11 @@ function constructUserIdFromHeaders(socket: Socket) {
           users: Array.from(room.getUsers().keys()),
         });
 
-        io.to(roomId).emit("active", Array.from(room.getUsers().keys()));
+        const activeUsers = [...room.getUsers().keys()].map(
+          (userId) => room.getUsers().get(userId)?.username
+        );
+
+        io.to(roomId).emit("active", activeUsers);
       }
     });
 
@@ -239,7 +243,13 @@ function constructUserIdFromHeaders(socket: Socket) {
       if (room) {
         room.removeUser(userId);
         socket.leave(roomId);
-        io.emit("active", Array.from(room.getUsers().keys()));
+
+        io.emit(
+          "active",
+          [...room.getUsers().keys()].map(
+            (userId) => room.getUsers().get(userId)?.username
+          )
+        );
       }
     });
 
@@ -250,7 +260,12 @@ function constructUserIdFromHeaders(socket: Socket) {
         const room = rooms.getRoom(roomId);
         if (room) {
           room.removeUser(userId);
-          io.to(roomId).emit("active", Array.from(room.getUsers().keys()));
+          io.to(roomId).emit(
+            "active",
+            [...room.getUsers().keys()].map(
+              (userId) => room.getUsers().get(userId)?.username
+            )
+          );
         }
       }
       users.delete(userId);

@@ -16,7 +16,6 @@ export class MovieManager {
   }
 
   private url(path: string, page = 1) {
-    console.log(path);
     return `https://api.themoviedb.org/3${path}?api_key=${this.TMDB_API_KEY}&language=en-US&page=${page}&sort_by=popularity.desc&include_adult=true&without_keywords=Anime,Talk&region=PL&with_watch_monetization_types=flatrate,free,ads,rent,purchase`;
   }
 
@@ -51,7 +50,7 @@ export class MovieManager {
 
     const { page = 1, genre, path } = options;
 
-    let url = this.url(path, page);
+    let url = this.url(path, page || 1);
 
     if (genre && genre.length > 0 && genre[0] !== 0) {
       url += "&with_genres=" + genre?.join("|");
@@ -68,14 +67,14 @@ export class MovieManager {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to fetch movies");
+        console.log(await response.json());
+        throw new Error(await response.json());
       }
 
       const data = await response.json();
 
       return data as T;
     } catch (error) {
-      console.error(JSON.stringify(error, null, 2));
       return null;
     }
   }
