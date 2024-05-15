@@ -112,8 +112,6 @@ moviesRouter.get(
     try {
       const genres = (req.query.genres || "").toString().split(",").map(Number);
 
-      console.log(page);
-
       const response = await movieManager.getMoviesAsync<any>({
         path: type,
         genre: genres,

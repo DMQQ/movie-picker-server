@@ -150,6 +150,18 @@ function constructUserIdFromHeaders(socket: Socket) {
       }
     });
 
+    socket.on("get-movies", async (roomId: string) => {
+      const room = rooms.getRoom(roomId);
+
+      if (room) {
+        const movies = room.getMovies();
+
+        io.to(socket.id).emit("movies", {
+          movies: movies,
+        });
+      }
+    });
+
     socket.on("join-room", async (roomId: string, username = "guest") => {
       const room = rooms.getRoom(roomId);
 

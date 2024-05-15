@@ -67,7 +67,6 @@ export class MovieManager {
       });
 
       if (!response.ok) {
-        console.log(await response.json());
         throw new Error(await response.json());
       }
 
