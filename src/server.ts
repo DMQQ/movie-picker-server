@@ -71,26 +71,32 @@ function constructUserIdFromHeaders(socket: Socket) {
     });
 
     // create room and join room
-    socket.on(
-      "create-room",
-      (type, pageRange = 1, genres: number[] = [], nickname: string) => {
-        if (!paths.includes(type)) return;
+    socket.on("create-room", (data, ack) => {
+      const { type, pageRange, genres, nickname } = data;
+      if (!paths.includes(type)) return;
 
-        const room = new Room()
-          .setAdminUser({
-            userId,
-            socket,
-            username: nickname,
-          })
-          .setType(type)
-          .setPage(Math.floor(Math.random() * pageRange) + 1)
-          .setGenres(genres);
+      const room = new Room()
+        .setAdminUser({
+          userId,
+          socket,
+          username: nickname,
+        })
+        .setType(type)
+        .setPage(Math.floor(Math.random() * pageRange) + 1)
+        .setGenres(genres);
 
-        rooms.createRoom(room.getId(), room);
+      rooms.createRoom(room.getId(), room);
 
-        socket.emit("room-created", room.getId());
-      }
-    );
+      ack({
+        roomId: room.getId(),
+        details: {
+          ...room.getRoomDetails(),
+          users: room.getUsersNicks(),
+        },
+      });
+
+      //socket.emit("room-created", room.getId());
+    });
 
     // Get all matches in room
     socket.on("get-overview", (roomId: string) => {
@@ -173,10 +179,22 @@ function constructUserIdFromHeaders(socket: Socket) {
     });
 
     // Join room and get room details, fetch movies if room is empty
-    socket.on("join-room", async (roomId: string, username = "guest") => {
+    socket.on("join-room", async (roomId: string, username = "guest", ack) => {
       const room = rooms.getRoom(roomId);
 
+      if (typeof ack === "function" && !room) {
+        ack({
+          joined: false,
+        });
+      }
+
       if (room) {
+        if (typeof ack === "function") {
+          ack({
+            joined: true,
+          });
+        }
+
         socket.join(roomId);
         users.set(userId, {
           socket: socket,
