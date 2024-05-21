@@ -63,6 +63,7 @@ function constructUserIdFromHeaders(socket: Socket) {
 
 (() => {
   io.on("connection", (socket) => {
+    // Create user id for identification through the app
     const userId = constructUserIdFromHeaders(socket);
     users.set(userId, {
       socket: socket,
@@ -70,23 +71,28 @@ function constructUserIdFromHeaders(socket: Socket) {
     });
 
     // create room and join room
-    socket.on("create-room", (type, pageRange = 1, genres: number[] = []) => {
-      if (!paths.includes(type)) return;
+    socket.on(
+      "create-room",
+      (type, pageRange = 1, genres: number[] = [], nickname: string) => {
+        if (!paths.includes(type)) return;
 
-      const room = new Room()
-        .setAdminUser({
-          userId,
-          socket,
-          username: "host",
-        })
-        .setType(type)
-        .setPage(Math.floor(Math.random() * pageRange) + 1)
-        .setGenres(genres);
+        const room = new Room()
+          .setAdminUser({
+            userId,
+            socket,
+            username: nickname,
+          })
+          .setType(type)
+          .setPage(Math.floor(Math.random() * pageRange) + 1)
+          .setGenres(genres);
 
-      rooms.createRoom(room.getId(), room);
-      socket.emit("room-created", room.getId());
-    });
+        rooms.createRoom(room.getId(), room);
 
+        socket.emit("room-created", room.getId());
+      }
+    );
+
+    // Get all matches in room
     socket.on("get-overview", (roomId: string) => {
       const room = rooms.getRoom(roomId);
 
@@ -95,7 +101,7 @@ function constructUserIdFromHeaders(socket: Socket) {
       }
     });
 
-    // delete room and leave room
+    // leave room and delete if host
     socket.on("delete-room", (roomId: string) => {
       if (rooms.getRoom(roomId)?.getHost() === userId) {
         rooms.deleteRoom(roomId);
@@ -104,6 +110,7 @@ function constructUserIdFromHeaders(socket: Socket) {
       }
     });
 
+    // Check if all users in room have finished
     socket.on("get-buddy-status", (roomId) => {
       const room = rooms.getRoom(roomId);
       if (room) {
@@ -117,6 +124,7 @@ function constructUserIdFromHeaders(socket: Socket) {
       }
     });
 
+    // Finish round and get new movies if all users have finished
     socket.on("finish", async (roomId: string) => {
       const room = rooms.getRoom(roomId);
       if (room) {
@@ -130,6 +138,7 @@ function constructUserIdFromHeaders(socket: Socket) {
 
           if (allFinished) {
             room.nextPage();
+            // reset users picks and finished status
             users.forEach((u) => {
               (u.finished = false), (u.picks = []);
             });
@@ -150,6 +159,7 @@ function constructUserIdFromHeaders(socket: Socket) {
       }
     });
 
+    // Send movies to single user if requested
     socket.on("get-movies", async (roomId: string) => {
       const room = rooms.getRoom(roomId);
 
@@ -162,12 +172,12 @@ function constructUserIdFromHeaders(socket: Socket) {
       }
     });
 
+    // Join room and get room details, fetch movies if room is empty
     socket.on("join-room", async (roomId: string, username = "guest") => {
       const room = rooms.getRoom(roomId);
 
       if (room) {
         socket.join(roomId);
-        socket.emit("room-joined", room);
         users.set(userId, {
           socket: socket,
           roomId: roomId,
@@ -179,18 +189,18 @@ function constructUserIdFromHeaders(socket: Socket) {
           username: username,
         });
 
-        let movies = [];
+        let movies = room.getMovies();
 
-        if (room.getMovies().length === 0) {
+        if (movies.length === 0) {
           const data = await movieManager.getMoviesAsync<any>({
             page: room.page,
             path: room.type,
             genre: room.genres,
           });
           movies = data.results;
-        }
 
-        room.setMovies(movies);
+          room.setMovies(movies);
+        }
 
         io.to(socket.id).emit("movies", {
           movies: movies,
@@ -201,14 +211,13 @@ function constructUserIdFromHeaders(socket: Socket) {
           users: Array.from(room.getUsers().keys()),
         });
 
-        const activeUsers = [...room.getUsers().keys()].map(
-          (userId) => room.getUsers().get(userId)?.username
-        );
+        io.to(socket.id).emit("room-joined", room);
 
-        io.to(roomId).emit("active", activeUsers);
+        io.to(roomId).emit("active", room.getUsersNicks());
       }
     });
 
+    // Pick movie and check if all users have picked the same movie if so emit matched event
     socket.on("pick-movie", async ({ roomId, movie, index }) => {
       const room = rooms.getRoom(roomId);
 
@@ -225,6 +234,7 @@ function constructUserIdFromHeaders(socket: Socket) {
           let matched = 0,
             allMatched = true;
 
+          // check if all users have picked the same movie
           for (let i = 0; i < users.length; i++) {
             if (!users[i].picks.includes(movie)) {
               allMatched = false;
@@ -256,15 +266,15 @@ function constructUserIdFromHeaders(socket: Socket) {
         room.removeUser(userId);
         socket.leave(roomId);
 
-        io.emit(
-          "active",
-          [...room.getUsers().keys()].map(
-            (userId) => room.getUsers().get(userId)?.username
-          )
-        );
+        io.emit("active", room.getUsersNicks());
+
+        if (room.getUsers().size === 0) {
+          rooms.deleteRoom(roomId);
+        }
       }
     });
 
+    // Handle random disconnects, delete room if empty
     socket.on("disconnect", () => {
       const roomId = users.get(userId)?.roomId;
 
@@ -272,12 +282,11 @@ function constructUserIdFromHeaders(socket: Socket) {
         const room = rooms.getRoom(roomId);
         if (room) {
           room.removeUser(userId);
-          io.to(roomId).emit(
-            "active",
-            [...room.getUsers().keys()].map(
-              (userId) => room.getUsers().get(userId)?.username
-            )
-          );
+          io.to(roomId).emit("active", room.getUsersNicks());
+
+          if (room.getUsers().size === 0) {
+            rooms.deleteRoom(roomId);
+          }
         }
       }
       users.delete(userId);

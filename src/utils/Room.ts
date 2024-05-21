@@ -105,6 +105,10 @@ export class Room {
     return this;
   }
 
+  getUsersNicks() {
+    return Array.from(this.users.values()).map((usr) => usr.username);
+  }
+
   nextPage() {
     this.page += 1;
   }
@@ -171,7 +175,12 @@ export class Room {
   }
 
   setAdminUser(user: Omit<TUser, "picks">) {
-    this.users.set(user.userId, { ...user, isAdmin: true, picks: [] });
+    this.users.set(user.userId, {
+      ...user,
+      isAdmin: true,
+      picks: [],
+      finished: false,
+    });
     this.host = user.userId;
 
     return this;
