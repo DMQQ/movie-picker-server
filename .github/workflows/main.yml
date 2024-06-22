@@ -35,6 +35,8 @@ jobs:
           ssh-private-key: ${{ secrets.VPS_DEPLOY_KEY }}
 
       - name: Deploy to VPS
+        env:
+          VPS_IP: ${{ secrets.VPS_IP }}
         run: |
           ssh -o StrictHostKeyChecking=no root@${{ env.VPS_IP }} << 'EOF'
             cd /movie-picker-server
