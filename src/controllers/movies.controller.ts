@@ -31,9 +31,9 @@ const returnErrorOnValidationFailMiddleware = (
 
   if (!result.isEmpty()) {
     return res.status(400).json({ errors: result.array() });
+  } else {
+    next();
   }
-
-  next();
 };
 
 const moviesRouter = Router();
@@ -49,6 +49,7 @@ moviesRouter.get("/landing", async (req, res) => {
         id: movie.id,
         poster_path: movie.poster_path,
         title: movie.title,
+        type: movie.media_type,
       }))
     );
   } catch (error) {
@@ -78,12 +79,6 @@ moviesRouter.get(
   ...getGenresValidation,
   returnErrorOnValidationFailMiddleware,
   async (req, res) => {
-    const result = validationResult(req);
-
-    if (!result.isEmpty()) {
-      return res.status(400).json({ errors: result.array() });
-    }
-
     const type = req.params!.type;
     const url = `https://api.themoviedb.org/3/genre/${type}/list?language=en-US`;
 
@@ -104,7 +99,7 @@ moviesRouter.get(
 moviesRouter.get(
   "/movie/max-count",
   // ...getMaxiumumCountValidation,
-  //  returnErrorOnValidationFailMiddleware,
+  // returnErrorOnValidationFailMiddleware,
   async (req: any, res) => {
     const type = req.query.type as string;
     const page = req.query.page as string;

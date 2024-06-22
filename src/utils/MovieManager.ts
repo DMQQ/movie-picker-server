@@ -8,6 +8,23 @@ interface GetMoviesAsyncOptions {
   path: string;
 }
 
+interface Movie {
+  adult: boolean;
+  backdrop_path: string;
+  genre_ids: number[];
+  id: number;
+  original_language: string;
+  original_title: string;
+  overview: string;
+  popularity: number;
+  poster_path: string;
+  release_date: string;
+  title: string;
+  video: boolean;
+  vote_average: number;
+  vote_count: number;
+}
+
 export class MovieManager {
   private TMDB_API_KEY: string;
 
@@ -19,28 +36,34 @@ export class MovieManager {
     return `https://api.themoviedb.org/3${path}?api_key=${this.TMDB_API_KEY}&language=en-US&page=${page}&sort_by=popularity.desc&include_adult=true&without_keywords=Anime,Talk&region=PL&with_watch_monetization_types=flatrate,free,ads,rent,purchase`;
   }
 
+  private async query<T>(path: string): Promise<T> {
+    const repsonse = await fetch(path, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${this.TMDB_API_KEY}`,
+      },
+    });
+
+    if (!repsonse.ok) {
+      throw new Error("Failed to fetch movies");
+    }
+
+    return repsonse.json() as T;
+  }
+
   async getLandingPageMovies() {
     try {
       let url = `https://api.themoviedb.org/3/trending/all/day?language=en-US`;
 
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          Authorization: `Bearer ${this.TMDB_API_KEY}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch movies");
-      }
-
-      const data = await response.json();
+      const data = await this.query<{
+        results: Movie[];
+      }>(url);
 
       return data;
     } catch (error) {
-      return null;
+      return { results: [] };
     }
   }
 
@@ -57,20 +80,7 @@ export class MovieManager {
     }
 
     try {
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          Authorization: `Bearer ${this.TMDB_API_KEY}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(await response.json());
-      }
-
-      const data = await response.json();
+      const data = await this.query(url);
 
       return data as T;
     } catch (error) {
@@ -85,20 +95,7 @@ export class MovieManager {
     const url = `https://api.themoviedb.org/3/movie/${id}?api_key=${this.TMDB_API_KEY}&language=en-US`;
 
     try {
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          Authorization: `Bearer ${this.TMDB_API_KEY}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch movie details");
-      }
-
-      const data = await response.json();
+      const data = await this.query(url);
 
       return data as T;
     } catch (error) {
@@ -113,20 +110,7 @@ export class MovieManager {
     const url = `https://api.themoviedb.org/3/tv/${id}?api_key=${this.TMDB_API_KEY}&language=en-US`;
 
     try {
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          Authorization: `Bearer ${this.TMDB_API_KEY}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch serie details");
-      }
-
-      const data = await response.json();
+      const data = await this.query(url);
 
       return data as T;
     } catch (error) {
@@ -140,20 +124,7 @@ export class MovieManager {
 
     const url = `https://api.themoviedb.org/3/${type}/${id}/images`;
 
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: `Bearer ${this.TMDB_API_KEY}`,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch images");
-    }
-
-    const data = await response.json();
+    const data = await this.query(url);
 
     return data;
   }
@@ -168,20 +139,25 @@ export class MovieManager {
     }
 
     try {
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          Authorization: `Bearer ${this.TMDB_API_KEY}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch movie providers");
-      }
-
-      const data = await response.json();
+      const data = await this.query<{
+        results: {
+          [key: string]: {
+            link: string;
+            rent: {
+              link: string;
+              flatrate: {
+                link: string;
+              }[];
+            };
+            buy: {
+              link: string;
+              flatrate: {
+                link: string;
+              }[];
+            };
+          };
+        };
+      }>(url);
 
       return data?.["results"]?.[locale.toUpperCase()];
     } catch (error) {
